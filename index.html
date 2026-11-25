@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>핑크 할 일 체크표</title>
+<style>
+  :root {
+    --bg: #fff0f6;
+    --card: #ffffff;
+    --pink: #ff7eb6;
+    --pink-dark: #e0559a;
+    --pink-soft: #ffd6e8;
+    --text: #5a2a43;
+    --muted: #b07a96;
+    --late: #ff4d6d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 60px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    font-size: 16px;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { text-align: center; margin: 8px 0 4px; font-size: 28px; color: var(--pink-dark); }
+  .today { text-align: center; color: var(--muted); margin-bottom: 16px; }
+  .progress {
+    background: var(--card); border-radius: 20px; padding: 14px 18px; margin-bottom: 16px;
+    box-shadow: 0 4px 14px rgba(255,126,182,.2); text-align: center; font-weight: 700;
+  }
+  .bar { height: 12px; background: var(--pink-soft); border-radius: 99px; margin-top: 8px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, #ff9ac9, var(--pink)); transition: width .3s; }
+  form {
+    background: var(--card); border-radius: 20px; padding: 16px; margin-bottom: 20px;
+    box-shadow: 0 4px 14px rgba(255,126,182,.2); display: grid; gap: 10px;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input[type=text], input[type=date] {
+    border: 2px solid var(--pink-soft); border-radius: 14px; padding: 10px 12px;
+    font: inherit; color: var(--text); background: #fffafc; min-width: 0;
+  }
+  input[type=text] { flex: 1 1 100%; }
+  input[type=date] { flex: 1 1 140px; }
+  input:focus { outline: none; border-color: var(--pink); }
+  label.small { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; flex: 1 1 140px; }
+  .star-toggle { cursor: pointer; user-select: none; font-size: 15px; display: flex; align-items: center; gap: 6px; }
+  button.add {
+    border: 0; border-radius: 14px; padding: 12px; font: inherit; font-weight: 700; cursor: pointer;
+    background: var(--pink); color: #fff; transition: transform .1s, background .2s;
+  }
+  button.add:hover { background: var(--pink-dark); }
+  button.add:active { transform: scale(.97); }
+  .group { margin-bottom: 18px; }
+  .group h2 { font-size: 17px; margin: 0 0 8px 6px; color: var(--pink-dark); }
+  .group h2 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  li {
+    background: var(--card); border-radius: 16px; padding: 12px 14px; display: flex; gap: 10px; align-items: center;
+    box-shadow: 0 2px 8px rgba(255,126,182,.18);
+  }
+  li input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--pink); flex: none; cursor: pointer; }
+  .info { flex: 1; min-width: 0; }
+  .title { word-break: break-word; }
+  li.done .title { text-decoration: line-through; color: var(--muted); }
+  .due { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .due.late { color: var(--late); font-weight: 700; }
+  li.late { border: 2px solid var(--late); }
+  button.icon { border: 0; background: transparent; font-size: 20px; cursor: pointer; padding: 4px; line-height: 1; }
+  .empty { text-align: center; color: var(--muted); padding: 30px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>💗 나의 할 일 체크표 💗</h1>
+  <div class="today" id="today"></div>
+
+  <div class="progress">
+    <div id="progressText"></div>
+    <div class="bar"><div id="bar"></div></div>
+  </div>
+
+  <form id="form">
+    <div class="row">
+      <input type="text" id="title" placeholder="할 일을 적어 주세요 🌸" maxlength="100" required>
+    </div>
+    <div class="row">
+      <label class="small">날짜 <input type="date" id="date" required></label>
+      <label class="small">마감일 (선택) <input type="date" id="due"></label>
+    </div>
+    <div class="row">
+      <label class="star-toggle"><input type="checkbox" id="star"> ⭐ 중요해요</label>
+    </div>
+    <button class="add" type="submit">추가하기 🎀</button>
+  </form>
+
+  <div id="list"></div>
+</div>
+
+<script>
+  const KEY = "pink-todo-v1";
+  let todos = [];
+  try { todos = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { todos = []; }
+
+  const $ = id => document.getElementById(id);
+  const pad = n => String(n).padStart(2, "0");
+  const toISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const todayISO = () => toISO(new Date());
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  const fmt = iso => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return `${m}월 ${d}일 (${days[new Date(y, m - 1, d).getDay()]})`;
+  };
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(todos)); } catch (e) {}
+  }
+
+  function render() {
+    const t = todayISO();
+    $("today").textContent = `오늘은 ${fmt(t)} 이에요 🌷`;
+
+    const todayItems = todos.filter(x => x.date === t);
+    const doneToday = todayItems.filter(x => x.done).length;
+    $("progressText").textContent = `오늘 완료 ${doneToday} / 전체 ${todayItems.length}`;
+    $("bar").style.width = todayItems.length ? (doneToday / todayItems.length * 100) + "%" : "0%";
+
+    const groups = {};
+    todos.forEach(x => (groups[x.date] = groups[x.date] || []).push(x));
+    const dates = Object.keys(groups).sort((a, b) => {
+      if (a === t) return -1;
+      if (b === t) return 1;
+      return a < b ? -1 : 1;
+    });
+
+    const list = $("list");
+    list.innerHTML = "";
+    if (!dates.length) {
+      list.innerHTML = '<div class="empty">아직 할 일이 없어요 🐰<br>위에서 하나 추가해 볼까요?</div>';
+      return;
+    }
+
+    dates.forEach(date => {
+      const g = document.createElement("div");
+      g.className = "group";
+      const done = groups[date].filter(x => x.done).length;
+      const h = document.createElement("h2");
+      h.textContent = (date === t ? "🌟 오늘 · " : "") + fmt(date);
+      const s = document.createElement("small");
+      s.textContent = `${done}/${groups[date].length}`;
+      h.appendChild(s);
+      g.appendChild(h);
+
+      const ul = document.createElement("ul");
+      groups[date]
+        .sort((a, b) => (b.star - a.star) || (a.id - b.id))
+        .forEach(x => {
+          const late = !x.done && x.due && x.due < t;
+          const li = document.createElement("li");
+          li.className = (x.done ? "done " : "") + (late ? "late" : "");
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = x.done;
+          cb.addEventListener("change", () => { x.done = cb.checked; save(); render(); });
+
+          const info = document.createElement("div");
+          info.className = "info";
+          const title = document.createElement("div");
+          title.className = "title";
+          title.textContent = x.title;
+          info.appendChild(title);
+          if (x.due) {
+            const due = document.createElement("div");
+            due.className = "due" + (late ? " late" : "");
+            due.textContent = (late ? "⚠️ 마감 지났어요 · " : "💌 마감 ") + fmt(x.due);
+            info.appendChild(due);
+          }
+
+          const star = document.createElement("button");
+          star.className = "icon";
+          star.title = "중요 표시";
+          star.textContent = x.star ? "⭐" : "☆";
+          star.addEventListener("click", () => { x.star = !x.star; save(); render(); });
+
+          const del = document.createElement("button");
+          del.className = "icon";
+          del.title = "삭제";
+          del.textContent = "🗑️";
+          del.addEventListener("click", () => { todos = todos.filter(y => y.id !== x.id); save(); render(); });
+
+          li.append(cb, info, star, del);
+          ul.appendChild(li);
+        });
+      g.appendChild(ul);
+      list.appendChild(g);
+    });
+  }
+
+  $("date").value = todayISO();
+
+  $("form").addEventListener("submit", e => {
+    e.preventDefault();
+    const title = $("title").value.trim();
+    if (!title) return;
+    todos.push({
+      id: Date.now() + Math.random(),
+      title,
+      date: $("date").value || todayISO(),
+      due: $("due").value || "",
+      star: $("star").checked,
+      done: false
+    });
+    save();
+    $("title").value = "";
+    $("due").value = "";
+    $("star").checked = false;
+    render();
+    $("title").focus();
+  });
+
+  render();
+</script>
+</body>
+</html>
